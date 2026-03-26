@@ -10,7 +10,8 @@
 
 Автоматический Excel-отчёт, который показывает, **сколько мы должны клиентам** — то есть товары, за которые клиенты заплатили, но ещё не получили (зарезервированные устройства).
 
-**Файл:** `0_Inbox/Задолженность_перед_клиентами_v2.xlsx`
+**Файл:** `0_Inbox/Задолженность_перед_клиентами_v2.xlsx`  
+**Google Таблица (обновляется автоматически):** https://docs.google.com/spreadsheets/d/1GuFU4MaFG9KagIxVbeUW6QV2RuLtj_OebARltjoMrz0/edit
 
 ---
 
@@ -86,4 +87,6 @@ python3 02_build_report.py
 - [Техническая документация](./TECHNICAL.md) — архитектура, API, переменные
 - [Инструкция по обновлению](./HOW_TO_UPDATE.md) — пошаговый гайд
 - [Скрипты](./scripts/) — Python-код для запуска
-- [GitHub Actions](./.github/workflows/weekly_update.yml) — автоматическое еженедельное обновление
+- [GitHub Actions](./.github/workflows/weekly_update.yml) — автоматическое обновление по расписанию (пн 09:00 МСК, пт 06:00 МСК)
+- [Google Таблица](https://docs.google.com/spreadsheets/d/1GuFU4MaFG9KagIxVbeUW6QV2RuLtj_OebARltjoMrz0/edit) — актуальные данные онлайн
+- [Репозиторий GitHub](https://github.com/Breezeks-cloud/moysklad-debt-report) — исходный код и workflow

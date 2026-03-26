@@ -2,8 +2,10 @@ name: Weekly Report Update
 
 on:
   # Каждый понедельник в 06:00 UTC = 09:00 МСК
+  # Каждую пятницу в 03:00 UTC = 06:00 МСК
   schedule:
     - cron: '0 6 * * 1'
+    - cron: '0 3 * * 5'
 
   # Запуск вручную через GitHub UI
   workflow_dispatch:
