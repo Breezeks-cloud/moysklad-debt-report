@@ -30,9 +30,10 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
-        run: pip install openpyxl gspread google-auth
+        run: pip install -r requirements.txt
 
       - name: Fetch data from MoySklad API
         env:
