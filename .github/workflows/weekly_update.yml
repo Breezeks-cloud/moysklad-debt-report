@@ -1,0 +1,94 @@
+name: Weekly Report Update
+
+on:
+  # Каждый понедельник в 06:00 UTC = 09:00 МСК
+  schedule:
+    - cron: '0 6 * * 1'
+
+  # Запуск вручную через GitHub UI
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Причина ручного запуска'
+        required: false
+        default: 'Manual update'
+
+jobs:
+  update-report:
+    name: Update MoySklad Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install openpyxl gspread google-auth
+
+      - name: Fetch data from MoySklad API
+        env:
+          MOYSKLAD_TOKEN: ${{ secrets.MOYSKLAD_TOKEN }}
+          CACHE_PATH: /tmp/moysklad_report_v4.pkl
+        run: |
+          cd scripts
+          python3 01_fetch_data.py
+
+      - name: Build Excel report
+        env:
+          CACHE_PATH: /tmp/moysklad_report_v4.pkl
+          OUTPUT_PATH: ./Задолженность_перед_клиентами_v2.xlsx
+        run: |
+          cd scripts
+          python3 02_build_report.py
+
+      - name: Upload report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ github.run_id }}
+          path: scripts/Задолженность_перед_клиентами_v2.xlsx
+          retention-days: 30
+
+      - name: Upload to Google Sheets
+        if: ${{ secrets.SPREADSHEET_ID != '' && secrets.GOOGLE_CREDENTIALS_JSON != '' }}
+        env:
+          CACHE_PATH: /tmp/moysklad_report_v4.pkl
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          cd scripts
+          python3 03_upload_gsheets.py \
+            && echo "✅ Google Sheets updated" \
+            || echo "⚠️ Google Sheets upload failed"
+
+      - name: Upload to Nextcloud via WebDAV (optional)
+        if: ${{ secrets.NEXTCLOUD_URL != '' }}
+        env:
+          NEXTCLOUD_URL: ${{ secrets.NEXTCLOUD_URL }}
+          NEXTCLOUD_USER: ${{ secrets.NEXTCLOUD_USER }}
+          NEXTCLOUD_PASSWORD: ${{ secrets.NEXTCLOUD_PASSWORD }}
+        run: |
+          curl -s -u "${NEXTCLOUD_USER}:${NEXTCLOUD_PASSWORD}" \
+            -T "scripts/Задолженность_перед_клиентами_v2.xlsx" \
+            "${NEXTCLOUD_URL}/remote.php/dav/files/${NEXTCLOUD_USER}/0_Inbox/Задолженность_перед_клиентами_v2.xlsx" \
+            && echo "✅ Uploaded to Nextcloud" \
+            || echo "⚠️ Nextcloud upload failed (optional step)"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Отчёт обновлён" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Дата:** $(date +'%d.%m.%Y %H:%M') UTC" >> $GITHUB_STEP_SUMMARY
+          echo "**Файл:** Задолженность_перед_клиентами_v2.xlsx" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Скачать можно в разделе **Artifacts** этого запуска." >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.SPREADSHEET_ID }}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Google Sheets:** https://docs.google.com/spreadsheets/d/${{ secrets.SPREADSHEET_ID }}" >> $GITHUB_STEP_SUMMARY
+          fi
