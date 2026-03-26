@@ -14,7 +14,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 # ── Настройки ──────────────────────────────────────────────────────────────────
-TOKEN = os.environ.get('MOYSKLAD_TOKEN', '5cb4bc34b5eb0ba857c61a016fca8c223922ae40')
+TOKEN = os.environ.get('MOYSKLAD_TOKEN', '')
+if not TOKEN:
+    raise RuntimeError("MOYSKLAD_TOKEN не задан. Установите переменную окружения MOYSKLAD_TOKEN.")
 CACHE_PATH = os.environ.get('CACHE_PATH', '/tmp/moysklad_report_v4.pkl')
 BASE = 'https://api.moysklad.ru/api/remap/1.2'
 LIMIT = 1000
