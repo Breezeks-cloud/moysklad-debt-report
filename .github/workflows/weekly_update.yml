@@ -58,7 +58,6 @@ jobs:
           retention-days: 30
 
       - name: Upload to Google Sheets
-        if: ${{ secrets.SPREADSHEET_ID != '' && secrets.GOOGLE_CREDENTIALS_JSON != '' }}
         env:
           CACHE_PATH: /tmp/moysklad_report_v4.pkl
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
@@ -70,11 +69,11 @@ jobs:
             || echo "⚠️ Google Sheets upload failed"
 
       - name: Upload to Nextcloud via WebDAV (optional)
-        if: ${{ secrets.NEXTCLOUD_URL != '' }}
         env:
           NEXTCLOUD_URL: ${{ secrets.NEXTCLOUD_URL }}
           NEXTCLOUD_USER: ${{ secrets.NEXTCLOUD_USER }}
           NEXTCLOUD_PASSWORD: ${{ secrets.NEXTCLOUD_PASSWORD }}
+        if: env.NEXTCLOUD_URL != ''
         run: |
           curl -s -u "${NEXTCLOUD_USER}:${NEXTCLOUD_PASSWORD}" \
             -T "scripts/Задолженность_перед_клиентами_v2.xlsx" \
