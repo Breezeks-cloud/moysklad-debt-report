@@ -3,8 +3,8 @@
 МойСклад → Задолженность перед клиентами
 Шаг 3: Выгрузка ВСЕХ листов в Google Таблицу с числовыми данными.
 
-Обновляет 9 листов: Сводка, Бризеры, Товары (все), Детализация,
-Клиенты, Закрытые с долгом, _Справочник, _API_Клиенты, _API_Позиции.
+Обновляет 8 листов: Сводка, Бризеры, Товары (все), Детализация,
+Закрытые с долгом, _Справочник, _API_Клиенты, _API_Позиции.
 
 Запуск: python3 03_upload_gsheets.py
 """
@@ -30,7 +30,7 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/drive']
 
 ALL_SHEETS = ['Сводка', 'Бризеры', 'Товары (все)', 'Детализация',
-              'Клиенты', 'Закрытые с долгом',
+              'Закрытые с долгом',
               '_Справочник', '_API_Клиенты', '_API_Позиции']
 
 # ── Colors (RGB 0–1) ─────────────────────────────────────────────────────────
@@ -121,6 +121,11 @@ def _cp(name, pref):
     return max(r.get('buy_price', 0), r.get('kit_price', 0))
 
 
+def _reset(sid, nrows=2000, ncols=20):
+    """Clear ALL old formatting from a sheet before writing new data."""
+    return _rpt(sid, 0, 0, nrows, ncols, bg=W, bold=False, sz=10, fg=DK, ha='LEFT')
+
+
 def _write(ws, rows):
     ws.clear()
     ws.update(range_name='A1', values=rows, value_input_option='RAW')
@@ -137,6 +142,7 @@ def up_positions(ws, results, R, sid):
                      r.get('item_name', ''), r.get('qty', 0),
                      round(r.get('debt_alloc', 0), 2),
                      r.get('category', ''), r.get('status', '')])
+    R.append(_reset(sid))
     _write(ws, data)
     n = len(results)
     R.append(_hdr(sid, len(H)))
@@ -160,6 +166,7 @@ def up_clients_raw(ws, clients, R, sid):
             round(info.get('balance', 0), 2), round(info.get('debt', 0), 2),
             ', '.join(info.get('orders', [])), len(info.get('orders', [])),
             info.get('status', '')])
+    R.append(_reset(sid))
     _write(ws, data)
     n = len(clients)
     R.append(_hdr(sid, len(H)))
@@ -181,6 +188,7 @@ def up_spravochnik(ws, pref, R, sid):
         bp, kp = info.get('buy_price', 0), info.get('kit_price', 0)
         data.append([name, info.get('category', ''), info.get('mfr', ''),
                      info.get('model', ''), bp, kp, max(bp, kp)])
+    R.append(_reset(sid))
     _write(ws, data)
     n = len(pref)
     R.append(_hdr(sid, len(H)))
@@ -275,6 +283,7 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
             round(info.get('debt', 0), 2), round(info.get('balance', 0), 2),
             len(info.get('orders', []))])                                            # 31-40
 
+    R.append(_reset(sid))
     R.append(_unmerge(sid))
     _write(ws, rows)
 
@@ -382,6 +391,7 @@ def up_breezers(ws, results, pref, R, sid):
                              round(t['debt'], 2), round(t['cost'], 2)])
                 fmt.append((len(rows) - 1, 'cfg'))
 
+    R.append(_reset(sid))
     _write(ws, rows)
     R.append(_hdr(sid, 4))
 
@@ -424,6 +434,7 @@ def up_all_products(ws, results, pref, R, sid):
                      round(info['debt'], 2),
                      round(info['qty'] * _cp(name, pref), 2)])
 
+    R.append(_reset(sid))
     _write(ws, rows)
     n = len(agg)
     R.append(_hdr(sid, 5))
@@ -450,6 +461,7 @@ def up_detail(ws, results, status, pref, R, sid):
                      round(r.get('debt_alloc', 0), 2),
                      round(q * _cp(n, pref), 2)])
 
+    R.append(_reset(sid))
     _write(ws, rows)
     n = len(filtered)
     R.append(_hdr(sid, len(H)))
@@ -459,6 +471,29 @@ def up_detail(ws, results, status, pref, R, sid):
         R.append(_rpt(sid, 1, 8, n, 1, nf=RUB))
     R.append(_frz(sid, 1))
     for i, px in enumerate([200, 80, 120, 120, 300, 140, 60, 120, 120]):
+        R.append(_cw(sid, i, px))
+
+
+# ── Закрытые с долгом (клиентский уровень) ─────────────────────────────────
+def up_closed_clients(ws, clients, R, sid):
+    closed = {k: v for k, v in clients.items() if v.get('status') == 'Закрытый'}
+    H = ['Клиент', 'Код', 'Тел.', 'Тип', 'Баланс МС, ₽', 'Заказов']
+    rows = [H]
+    for info in sorted(closed.values(), key=lambda x: -x.get('balance', 0)):
+        rows.append([
+            info.get('name', ''), info.get('code', ''), info.get('phone', ''),
+            'Юр. лицо' if info.get('companyType') == 'legal' else 'Физ. лицо',
+            round(info.get('balance', 0), 2),
+            len(info.get('orders', []))])
+    R.append(_reset(sid))
+    _write(ws, rows)
+    n = len(closed)
+    R.append(_hdr(sid, len(H)))
+    if n:
+        R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
+        R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
+    R.append(_frz(sid))
+    for i, px in enumerate([280, 80, 140, 80, 140, 80]):
         R.append(_cw(sid, i, px))
 
 
@@ -518,11 +553,9 @@ if __name__ == '__main__':
         ('Детализация',       lambda: up_detail(sm['Детализация'], results, 'Активный',
                                                  product_ref, R,
                                                  sm['Детализация'].id)),
-        ('Закрытые с долгом', lambda: up_detail(sm['Закрытые с долгом'], results,
-                                                 'Закрытый', product_ref, R,
-                                                 sm['Закрытые с долгом'].id)),
-        ('Клиенты',           lambda: up_clients_raw(sm['Клиенты'], clients, R,
-                                                      sm['Клиенты'].id)),
+        ('Закрытые с долгом', lambda: up_closed_clients(sm['Закрытые с долгом'],
+                                                        clients, R,
+                                                        sm['Закрытые с долгом'].id)),
     ]
 
     for name, fn in steps:
