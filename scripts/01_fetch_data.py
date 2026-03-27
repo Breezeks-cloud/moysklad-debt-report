@@ -162,6 +162,7 @@ def scan_orders(clients):
     print('Phase 3: scanning orders...')
     client_ids = set(clients.keys())
     candidates = {}
+    closed_orders_map = {}
     offset = 0
     total = 0
     while True:
@@ -176,17 +177,23 @@ def scan_orders(clients):
             break
         total += len(rows)
         for o in rows:
-            payed = (o.get('payedSum', 0) or 0) / 100.0
-            shipped = (o.get('shippedSum', 0) or 0) / 100.0
-            if payed <= shipped:
-                continue
             agent_href = (o.get('agent', {}).get('meta', {}).get('href', ''))
             aid = agent_href.split('/')[-1] if agent_href else ''
             if aid not in client_ids:
                 continue
-            oid = o['id']
+            payed = (o.get('payedSum', 0) or 0) / 100.0
+            shipped = (o.get('shippedSum', 0) or 0) / 100.0
             state_name = (o.get('state') or {}).get('name', '')
-            is_closed = any(w in state_name.lower() for w in ['закрыт', 'отмен', 'выполн', 'реализован'])
+            is_closed = any(w in state_name.lower()
+                           for w in ['закрыт', 'отмен', 'выполн', 'реализован'])
+            if is_closed:
+                closed_orders_map.setdefault(aid, []).append({
+                    'name': o.get('name', ''), 'state': state_name,
+                    'payedSum': payed, 'shippedSum': shipped,
+                })
+            if payed <= shipped:
+                continue
+            oid = o['id']
             if oid not in candidates:
                 candidates[oid] = {
                     'id': oid, 'name': o.get('name', ''),
@@ -201,7 +208,8 @@ def scan_orders(clients):
         offset += LIMIT
         time.sleep(0.1)
     print(f'  total scanned: {total}, candidates: {len(candidates)}')
-    return candidates
+    print(f'  clients with closed orders: {len(closed_orders_map)}')
+    return candidates, closed_orders_map
 
 # ── Фаза 4: детали заказов ─────────────────────────────────────────────────────
 def fetch_order_details(candidates, clients):
@@ -310,7 +318,7 @@ def fetch_order_details(candidates, clients):
     return results, product_ref, clients
 
 # ── Агрегация клиентов ─────────────────────────────────────────────────────────
-def aggregate_clients(results, clients):
+def aggregate_clients(results, clients, closed_orders_map=None):
     debt_map = defaultdict(float)
     status_map = {}
     for r in results:
@@ -325,8 +333,9 @@ def aggregate_clients(results, clients):
         clients[aid]['status'] = status_map.get(aid, 'Закрытый')
         if 'orders' not in clients[aid]:
             clients[aid]['orders'] = []
+        if closed_orders_map and aid in closed_orders_map:
+            clients[aid]['closed_orders'] = closed_orders_map[aid]
 
-    # Sort by debt desc
     active = sorted(
         [(k, v) for k, v in clients.items() if v.get('status') == 'Активный'],
         key=lambda x: -x[1]['debt']
@@ -341,9 +350,9 @@ if __name__ == '__main__':
     print(f'=== МойСклад API → Data Fetch  [{datetime.now().strftime("%Y-%m-%d %H:%M")}] ===')
     clients = fetch_counterparties()
     clients = fetch_cp_details(clients)
-    candidates = scan_orders(clients)
+    candidates, closed_orders_map = scan_orders(clients)
     results, product_ref, clients = fetch_order_details(candidates, clients)
-    clients = aggregate_clients(results, clients)
+    clients = aggregate_clients(results, clients, closed_orders_map)
 
     data = {
         'clients': clients,

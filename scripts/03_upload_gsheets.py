@@ -113,7 +113,8 @@ def _unmerge(sid):
 
 
 def _hdr(sid, ncols):
-    return _rpt(sid, 0, 0, 1, ncols, bg=C['hdr'], bold=True, fg=W, ha='CENTER')
+    return _rpt(sid, 0, 0, 1, ncols, bg=C['hdr'], bold=True, fg=W, ha='CENTER',
+                wrap=True)
 
 
 def _cp(name, pref):
@@ -151,7 +152,7 @@ def up_positions(ws, results, R, sid):
         R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
         R.append(_rpt(sid, 1, 6, n, 1, nf=RUB))
     R.append(_frz(sid))
-    for i, px in enumerate([200, 80, 120, 120, 300, 60, 120, 140, 80]):
+    for i, px in enumerate([220, 90, 130, 130, 320, 70, 130, 150, 90]):
         R.append(_cw(sid, i, px))
 
 
@@ -362,18 +363,20 @@ def up_breezers(ws, results, pref, R, sid):
 
     rows = [H]
     fmt = []
+    grand_qty, grand_debt, grand_cost = 0, 0.0, 0.0
 
     for mfr in sorted(by_mfr, key=lambda x: (x != 'AIRNANNY', x)):
         mq = sum(r.get('qty', 0) for ms in by_mfr[mfr].values() for r in ms)
         md = sum(r.get('debt_alloc', 0) for ms in by_mfr[mfr].values() for r in ms)
         mc = sum(r.get('qty', 0) * _cp(r.get('item_name', ''), pref)
                  for ms in by_mfr[mfr].values() for r in ms)
-        rows.append([f'  {mfr}', mq, round(md, 2), round(mc, 2)])
+        grand_qty += mq; grand_debt += md; grand_cost += mc
+        rows.append([mfr, mq, round(md, 2), round(mc, 2)])
         fmt.append((len(rows) - 1, 'mfr'))
 
         for model in sorted(by_mfr[mfr]):
             items = by_mfr[mfr][model]
-            rows.append([f'    {model}',
+            rows.append([f'   {model}',
                          sum(r.get('qty', 0) for r in items),
                          round(sum(r.get('debt_alloc', 0) for r in items), 2),
                          round(sum(r.get('qty', 0) * _cp(r.get('item_name', ''), pref)
@@ -390,6 +393,9 @@ def up_breezers(ws, results, pref, R, sid):
                 rows.append([f'      {cfg}', t['qty'],
                              round(t['debt'], 2), round(t['cost'], 2)])
                 fmt.append((len(rows) - 1, 'cfg'))
+
+    total_ri = len(rows)
+    rows.append(['ИТОГО', grand_qty, round(grand_debt, 2), round(grand_cost, 2)])
 
     _full_reset(sid, R)
     _write(ws, rows)
@@ -412,8 +418,13 @@ def up_breezers(ws, results, pref, R, sid):
             R.append(_rpt(sid, ri, 1, 1, 1, bg=bg, ha='CENTER', nf=QTY))
             R.append(_rpt(sid, ri, 2, 1, 2, bg=bg, nf=RUB))
 
+    R.append(_rpt(sid, total_ri, 0, 1, 1, bg=C['total'], bold=True, sz=12))
+    R.append(_rpt(sid, total_ri, 1, 1, 1, bg=C['total'], bold=True, sz=12,
+                  ha='CENTER', nf=QTY))
+    R.append(_rpt(sid, total_ri, 2, 1, 2, bg=C['total'], bold=True, sz=12, nf=RUB))
+
     R.append(_frz(sid, 1))
-    for i, px in enumerate([380, 100, 140, 160]):
+    for i, px in enumerate([400, 100, 150, 170]):
         R.append(_cw(sid, i, px))
 
 
@@ -443,7 +454,7 @@ def up_all_products(ws, results, pref, R, sid):
         R.append(_rpt(sid, 1, 3, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
     R.append(_frz(sid, 1))
-    for i, px in enumerate([360, 140, 80, 130, 140]):
+    for i, px in enumerate([380, 160, 90, 140, 150]):
         R.append(_cw(sid, i, px))
 
 
@@ -470,30 +481,45 @@ def up_detail(ws, results, status, pref, R, sid):
         R.append(_rpt(sid, 1, 7, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 8, n, 1, nf=RUB))
     R.append(_frz(sid, 1))
-    for i, px in enumerate([200, 80, 120, 120, 300, 140, 60, 120, 120]):
+    for i, px in enumerate([220, 80, 130, 130, 320, 150, 70, 130, 140]):
         R.append(_cw(sid, i, px))
 
 
-# ── Закрытые с долгом (клиентский уровень) ─────────────────────────────────
+# ── Закрытые с долгом (контрагенты с завершёнными заказами и нашим долгом) ──
 def up_closed_clients(ws, clients, R, sid):
-    closed = {k: v for k, v in clients.items() if v.get('status') == 'Закрытый'}
-    H = ['Клиент', 'Код', 'Тел.', 'Тип', 'Баланс МС, ₽', 'Заказов']
+    closed = {}
+    for k, v in clients.items():
+        co = v.get('closed_orders', [])
+        if co and v.get('balance', 0) > 0:
+            closed[k] = v
+    if not closed:
+        for k, v in clients.items():
+            if v.get('status') == 'Закрытый' and v.get('balance', 0) > 0:
+                closed[k] = v
+
+    H = ['Клиент', 'Код', 'Тел.', 'Тип', 'Баланс МС, ₽',
+         'Закр. заказов', 'Заказы (закрытые)', 'Статусы']
     rows = [H]
     for info in sorted(closed.values(), key=lambda x: -x.get('balance', 0)):
+        co = info.get('closed_orders', [])
+        names = ', '.join(o.get('name', '') for o in co[:5])
+        if len(co) > 5:
+            names += f' (+{len(co) - 5})'
+        states = ', '.join(sorted(set(o.get('state', '') for o in co))) if co else ''
         rows.append([
             info.get('name', ''), info.get('code', ''), info.get('phone', ''),
             'Юр. лицо' if info.get('companyType') == 'legal' else 'Физ. лицо',
             round(info.get('balance', 0), 2),
-            len(info.get('orders', []))])
+            len(co), names, states])
     _full_reset(sid, R)
     _write(ws, rows)
     n = len(closed)
     R.append(_hdr(sid, len(H)))
     if n:
-        R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
+        R.append(_rpt(sid, 1, 4, n, 1, nf=RUB, bold=True))
         R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
     R.append(_frz(sid))
-    for i, px in enumerate([280, 80, 140, 80, 140, 80]):
+    for i, px in enumerate([260, 80, 130, 80, 140, 90, 280, 200]):
         R.append(_cw(sid, i, px))
 
 
