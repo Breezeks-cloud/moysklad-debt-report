@@ -23,7 +23,7 @@ LIMIT = 1000
 WORKERS = 10
 
 EXCLUDE_NAMES = ['микроклиматика', 'ип гончаров', 'гончаров м', 'бризекс']
-TEST_KW = ['тест', 'test', 'ананас', 'четвёртый', 'четвертый']
+TEST_KW = ['тест', 'test', 'ананас', 'четвёртый', 'четвертый', 'ромашка']
 
 BREEZER_KW = ['airnanny', 'tion ', 'tion4s', 'бризер', 'fanmaster', 'ballu',
               'royal clima', 'турков', 'turkov', 'живой воздух', 'приточная',
@@ -110,23 +110,26 @@ def fetch_counterparties():
     rows = get_all('/report/counterparty')
     result = {}
     for r in rows:
-        balance = r.get('balance', 0) or 0
+        balance_raw = r.get('balance', 0) or 0
+        balance = balance_raw / 100.0
         if balance <= 0:
             continue
-        name = r.get('name', '')
+        cp = r.get('counterparty', {})
+        name = cp.get('name', '')
         nl = name.lower()
         if any(e in nl for e in EXCLUDE_NAMES):
             continue
         if any(t in nl for t in TEST_KW):
             continue
-        agent = r.get('agent', {})
-        aid = agent.get('meta', {}).get('href', '').split('/')[-1]
+        aid = cp.get('id', '')
+        if not aid:
+            continue
         result[aid] = {
             'name': name,
             'balance': balance,
-            'companyType': r.get('companyType', 'individual'),
-            'href': agent.get('meta', {}).get('href', ''),
-            'code': '', 'phone': '',
+            'companyType': cp.get('companyType', 'individual'),
+            'href': cp.get('meta', {}).get('href', ''),
+            'code': '', 'phone': cp.get('phone', '') or '',
         }
     print(f'  positive balance: {len(result)} counterparties')
     return result
@@ -173,12 +176,12 @@ def scan_orders(clients):
             break
         total += len(rows)
         for o in rows:
-            payed = o.get('payedSum', 0) or 0
-            shipped = o.get('shippedSum', 0) or 0
+            payed = (o.get('payedSum', 0) or 0) / 100.0
+            shipped = (o.get('shippedSum', 0) or 0) / 100.0
             if payed <= shipped:
                 continue
-            agent = o.get('agent', {})
-            aid = agent.get('meta', {}).get('href', '').split('/')[-1]
+            agent_href = (o.get('agent', {}).get('meta', {}).get('href', ''))
+            aid = agent_href.split('/')[-1] if agent_href else ''
             if aid not in client_ids:
                 continue
             oid = o['id']
