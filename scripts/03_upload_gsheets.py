@@ -121,9 +121,10 @@ def _cp(name, pref):
     return max(r.get('buy_price', 0), r.get('kit_price', 0))
 
 
-def _reset(sid, nrows=2000, ncols=20):
-    """Clear ALL old formatting from a sheet before writing new data."""
-    return _rpt(sid, 0, 0, nrows, ncols, bg=W, bold=False, sz=10, fg=DK, ha='LEFT')
+def _full_reset(sid, R, nrows=2000, ncols=20):
+    """Clear ALL old merges and formatting from a sheet before writing new data."""
+    R.append(_unmerge(sid))
+    R.append(_rpt(sid, 0, 0, nrows, ncols, bg=W, bold=False, sz=10, fg=DK, ha='LEFT'))
 
 
 def _write(ws, rows):
@@ -142,7 +143,7 @@ def up_positions(ws, results, R, sid):
                      r.get('item_name', ''), r.get('qty', 0),
                      round(r.get('debt_alloc', 0), 2),
                      r.get('category', ''), r.get('status', '')])
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, data)
     n = len(results)
     R.append(_hdr(sid, len(H)))
@@ -166,7 +167,7 @@ def up_clients_raw(ws, clients, R, sid):
             round(info.get('balance', 0), 2), round(info.get('debt', 0), 2),
             ', '.join(info.get('orders', [])), len(info.get('orders', [])),
             info.get('status', '')])
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, data)
     n = len(clients)
     R.append(_hdr(sid, len(H)))
@@ -188,7 +189,7 @@ def up_spravochnik(ws, pref, R, sid):
         bp, kp = info.get('buy_price', 0), info.get('kit_price', 0)
         data.append([name, info.get('category', ''), info.get('mfr', ''),
                      info.get('model', ''), bp, kp, max(bp, kp)])
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, data)
     n = len(pref)
     R.append(_hdr(sid, len(H)))
@@ -283,8 +284,7 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
             round(info.get('debt', 0), 2), round(info.get('balance', 0), 2),
             len(info.get('orders', []))])                                            # 31-40
 
-    R.append(_reset(sid))
-    R.append(_unmerge(sid))
+    _full_reset(sid, R)
     _write(ws, rows)
 
     TB = {'red': 0.084, 'green': 0.396, 'blue': 0.753}
@@ -391,7 +391,7 @@ def up_breezers(ws, results, pref, R, sid):
                              round(t['debt'], 2), round(t['cost'], 2)])
                 fmt.append((len(rows) - 1, 'cfg'))
 
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, rows)
     R.append(_hdr(sid, 4))
 
@@ -434,7 +434,7 @@ def up_all_products(ws, results, pref, R, sid):
                      round(info['debt'], 2),
                      round(info['qty'] * _cp(name, pref), 2)])
 
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, rows)
     n = len(agg)
     R.append(_hdr(sid, 5))
@@ -461,7 +461,7 @@ def up_detail(ws, results, status, pref, R, sid):
                      round(r.get('debt_alloc', 0), 2),
                      round(q * _cp(n, pref), 2)])
 
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, rows)
     n = len(filtered)
     R.append(_hdr(sid, len(H)))
@@ -485,7 +485,7 @@ def up_closed_clients(ws, clients, R, sid):
             'Юр. лицо' if info.get('companyType') == 'legal' else 'Физ. лицо',
             round(info.get('balance', 0), 2),
             len(info.get('orders', []))])
-    R.append(_reset(sid))
+    _full_reset(sid, R)
     _write(ws, rows)
     n = len(closed)
     R.append(_hdr(sid, len(H)))
