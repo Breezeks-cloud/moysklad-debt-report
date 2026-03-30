@@ -171,7 +171,6 @@ def scan_orders(clients):
     print('Phase 3: scanning orders...')
     client_ids = set(clients.keys())
     candidates = {}
-    closed_orders_map = {}
     offset = 0
     total = 0
     while True:
@@ -195,11 +194,6 @@ def scan_orders(clients):
             state_name = (o.get('state') or {}).get('name', '')
             is_closed = any(w in state_name.lower()
                            for w in ['закрыт', 'отмен', 'выполн', 'реализован'])
-            if is_closed:
-                closed_orders_map.setdefault(aid, []).append({
-                    'name': o.get('name', ''), 'state': state_name,
-                    'payedSum': payed, 'shippedSum': shipped,
-                })
             if payed <= shipped:
                 continue
             oid = o['id']
@@ -217,8 +211,7 @@ def scan_orders(clients):
         offset += LIMIT
         time.sleep(0.1)
     print(f'  total scanned: {total}, candidates: {len(candidates)}')
-    print(f'  clients with closed orders: {len(closed_orders_map)}')
-    return candidates, closed_orders_map
+    return candidates
 
 # ── Фаза 4: детали заказов ─────────────────────────────────────────────────────
 def fetch_order_details(candidates, clients):
@@ -327,7 +320,7 @@ def fetch_order_details(candidates, clients):
     return results, product_ref, clients
 
 # ── Агрегация клиентов ─────────────────────────────────────────────────────────
-def aggregate_clients(results, clients, closed_orders_map=None):
+def aggregate_clients(results, clients):
     debt_map = defaultdict(float)
     status_map = {}
     for r in results:
@@ -342,26 +335,21 @@ def aggregate_clients(results, clients, closed_orders_map=None):
         clients[aid]['status'] = status_map.get(aid, 'Закрытый')
         if 'orders' not in clients[aid]:
             clients[aid]['orders'] = []
-        if closed_orders_map and aid in closed_orders_map:
-            clients[aid]['closed_orders'] = closed_orders_map[aid]
 
     active = sorted(
         [(k, v) for k, v in clients.items() if v.get('status') == 'Активный'],
         key=lambda x: -x[1]['debt']
     )
-    closed = [(k, v) for k, v in clients.items() if v.get('status') == 'Закрытый']
-
-    sorted_clients = dict(active + closed)
-    return sorted_clients
+    return dict(active)
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print(f'=== МойСклад API → Data Fetch  [{datetime.now().strftime("%Y-%m-%d %H:%M")}] ===')
     clients = fetch_counterparties()
     clients = fetch_cp_details(clients)
-    candidates, closed_orders_map = scan_orders(clients)
+    candidates = scan_orders(clients)
     results, product_ref, clients = fetch_order_details(candidates, clients)
-    clients = aggregate_clients(results, clients, closed_orders_map)
+    clients = aggregate_clients(results, clients)
 
     data = {
         'clients': clients,
@@ -372,9 +360,7 @@ if __name__ == '__main__':
     with open(CACHE_PATH, 'wb') as f:
         pickle.dump(data, f)
 
-    active = sum(1 for v in clients.values() if v.get('status') == 'Активный')
-    closed_c = sum(1 for v in clients.values() if v.get('status') == 'Закрытый')
     print(f'\n✅ Saved to {CACHE_PATH}')
-    print(f'   Clients: {active} active + {closed_c} closed')
+    print(f'   Clients: {len(clients)} active')
     print(f'   Positions: {len(results)}')
     print(f'   Products: {len(product_ref)}')

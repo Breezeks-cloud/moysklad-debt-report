@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 МойСклад → Задолженность перед клиентами
-Шаг 3: Выгрузка ВСЕХ листов в Google Таблицу с числовыми данными.
+Шаг 3: Выгрузка всех листов в Google Таблицу.
 
-Обновляет 8 листов: Сводка, Бризеры, Товары (все), Детализация,
-Закрытые с долгом, _Справочник, _API_Клиенты, _API_Позиции.
+Обновляет 7 листов: Сводка, Бризеры, Товары (все), Детализация,
+_Справочник, _API_Клиенты, _API_Позиции.
 
 Запуск: python3 03_upload_gsheets.py
 """
@@ -30,7 +30,6 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/drive']
 
 ALL_SHEETS = ['Сводка', 'Бризеры', 'Товары (все)', 'Детализация',
-              'Закрытые с долгом',
               '_Справочник', '_API_Клиенты', '_API_Позиции']
 
 # ── Colors (RGB 0–1) ─────────────────────────────────────────────────────────
@@ -85,14 +84,6 @@ def _filter_results(results):
     return [r for r in results if not _is_excluded_misc(r.get('item_name', ''))]
 
 
-def get_anomaly_clients(clients):
-    """Клиенты с положительным балансом и закрытыми заказами покупателя (аномалии).
-    Только реальные клиенты с closed_orders — поставщики/подрядчики исключены на этапе сбора данных."""
-    result = {}
-    for k, v in clients.items():
-        if v.get('closed_orders') and v.get('balance', 0) > 0:
-            result[k] = v
-    return result
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -285,12 +276,7 @@ def up_spravochnik(ws, pref, R, sid):
 def up_summary(ws, clients, results, pref, gen_at, R, sid):
     today = gen_at[:10]
     act = {k: v for k, v in clients.items() if v.get('status') == 'Активный'}
-    # Аномалии — клиенты с closed_orders и balance > 0 (та же логика, что «Закрытые с долгом»)
-    clo = get_anomaly_clients(clients)
     a_pos = [r for r in results if r.get('status') == 'Активный']
-    # Позиции аномальных клиентов (по client_id)
-    anom_ids = set(clo.keys())
-    c_pos = [r for r in results if r.get('client_id', '') in anom_ids]
 
     total_debt = sum(v.get('debt', 0) for v in act.values())
     cats = ['Бризер', 'Сплит/Кондиционер', 'Прочее', 'Услуга']
@@ -306,24 +292,16 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
     total_cost = sum(cc.get(c, 0) for c in ['Бризер', 'Сплит/Кондиционер', 'Прочее'])
     total_qty = sum(r.get('qty', 0) for r in a_pos)
 
-    # Аномалии: считаем баланс (фактически переплачено), а не долг по позициям
-    c_debt = sum(v.get('balance', 0) for v in clo.values())
-    c_qty = sum(r.get('qty', 0) for r in c_pos)
-    c_cost = sum(r.get('qty', 0) * _cp(r.get('item_name', ''), pref)
-                 for r in c_pos if r.get('category') != 'Услуга')
-    c_bqty = sum(r.get('qty', 0) for r in c_pos if r.get('category') == 'Бризер')
-    c_sqty = sum(r.get('qty', 0) for r in c_pos if r.get('category') == 'Сплит/Кондиционер')
-
     rows = []
     rows.append([f'Отчёт: Задолженность перед клиентами  |  {today}',
                  '', '', '', '', '', '', ''])                                       # 0
     rows.append([f'Период: 01.01.2023 — {today}  |  '
                  f'Долг = фактически оплачено − отгружено',
                  '', '', '', '', '', '', ''])                                       # 1
-    rows.append(['Исключены: Микроклиматика, ИП Гончаров, Бризекс, тестовые',
+    rows.append(['Исключены: Микроклиматика, ИП Гончаров, Бризекс, поставщики, тестовые',
                  '', '', '', '', '', '', ''])                                       # 2
     rows.append([''])                                                               # 3
-    rows.append(['АКТИВНЫЕ КЛИЕНТЫ (без аномалий)', '', '', '', '', '', '', ''])    # 4
+    rows.append(['АКТИВНЫЕ КЛИЕНТЫ', '', '', '', '', '', '', ''])                   # 4
     rows.append(['Клиентов с задолженностью', '', len(act)])                        # 5
     rows.append(['Общая задолженность', '', round(total_debt, 2)])                  # 6
     rows.append(['Общая себестоимость резерва', '', round(total_cost, 2)])           # 7
@@ -332,7 +310,7 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
     rows.append(['  Сплит-систем / кондиционеров', '', cq.get('Сплит/Кондиционер', 0)])  # 10
     rows.append(['  Прочих товаров', '', cq.get('Прочее', 0)])                      # 11
     rows.append([''])                                                               # 12
-    rows.append(['РАЗБИВКА ПО КАТЕГОРИЯМ (активные)', '', '', '', '', '', '', ''])   # 13
+    rows.append(['РАЗБИВКА ПО КАТЕГОРИЯМ', '', '', '', '', '', '', ''])             # 13
     rows.append(['', 'Категория', 'Кол-во', 'Долг, ₽',
                  'Себестоимость, ₽', 'Доля долга'])                                 # 14
 
@@ -346,18 +324,9 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
     rows.append(['', 'ИТОГО', total_qty, round(total_debt, 2),
                  round(total_cost, 2), 1.0])                                        # 19
     rows.append([''])                                                               # 20
-    rows.append(['АНОМАЛИИ (закрытые заказы — НЕ входят в долг выше)',
-                 '', '', '', '', '', '', ''])                                       # 21
-    rows.append(['Клиентов', '', len(clo)])                                         # 22
-    rows.append(['Задолженность', '', round(c_debt, 2)])                            # 23
-    rows.append(['Себестоимость', '', round(c_cost, 2)])                            # 24
-    rows.append(['Устройств', '', c_qty])                                           # 25
-    rows.append(['  Бризеров', '', c_bqty])                                         # 26
-    rows.append(['  Сплит / Кондиционеров', '', c_sqty])                            # 27
-    rows.append([''])                                                               # 28
-    rows.append(['ТОП-10 должников (активные)', '', '', '', '', '', '', ''])         # 29
+    rows.append(['ТОП-10 должников', '', '', '', '', '', '', ''])                   # 21
     rows.append(['№', 'Клиент', 'Код', 'Тел.', 'Тип',
-                 'Долг, ₽', 'Баланс, ₽', 'Заказов'])                               # 30
+                 'Долг, ₽', 'Баланс, ₽', 'Заказов'])                               # 22
 
     sorted_a = sorted(act.items(), key=lambda x: -x[1].get('debt', 0))
     for i, (_, info) in enumerate(sorted_a[:10], 1):
@@ -365,13 +334,12 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
             i, info.get('name', ''), info.get('code', ''), info.get('phone', ''),
             'Юр. лицо' if info.get('companyType') == 'legal' else 'Физ. лицо',
             round(info.get('debt', 0), 2), round(info.get('balance', 0), 2),
-            len(info.get('orders', []))])                                            # 31-40
+            len(info.get('orders', []))])                                            # 23-32
 
     _full_reset(sid, R)
     _write(ws, rows)
 
     TB = {'red': 0.084, 'green': 0.396, 'blue': 0.753}
-    TW = {'red': 0.902, 'green': 0.318, 'blue': 0.0}
 
     # Title block
     R.append(_merge(sid, 0, 0, 1, 8))
@@ -407,20 +375,12 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
     R.append(_rpt(sid, 19, 4, 1, 1, bg=C['total'], bold=True, nf=RUB))
     R.append(_rpt(sid, 19, 5, 1, 1, bg=C['total'], bold=True, ha='CENTER', nf=PCT))
 
-    # Anomalies
-    R.append(_merge(sid, 21, 0, 22, 8))
-    R.append(_rpt(sid, 21, 0, 1, 8, bg=C['warn'], bold=True, sz=12, fg=TW))
-    for r in range(22, 28):
-        R.append(_rpt(sid, r, 0, 1, 3))
-    R.append(_rpt(sid, 23, 2, 1, 1, bold=True, fg=TW, nf=RUB))
-    R.append(_rpt(sid, 24, 2, 1, 1, fg=TW, nf=RUB))
-
     # Top-10
-    R.append(_merge(sid, 29, 0, 30, 8))
-    R.append(_rpt(sid, 29, 0, 1, 8, bg=C['blue'], bold=True, sz=12, fg=C['hdr']))
-    R.append(_rpt(sid, 30, 0, 1, 8, bg=C['hdr'], bold=True, fg=W, ha='CENTER'))
+    R.append(_merge(sid, 21, 0, 22, 8))
+    R.append(_rpt(sid, 21, 0, 1, 8, bg=C['blue'], bold=True, sz=12, fg=C['hdr']))
+    R.append(_rpt(sid, 22, 0, 1, 8, bg=C['hdr'], bold=True, fg=W, ha='CENTER'))
     for i in range(min(10, len(sorted_a))):
-        r = 31 + i
+        r = 23 + i
         bg = C['grey'] if i % 2 == 1 else W
         R.append(_rpt(sid, r, 0, 1, 8, bg=bg))
         R.append(_rpt(sid, r, 0, 1, 1, bg=bg, ha='CENTER'))
@@ -575,42 +535,6 @@ def up_detail(ws, results, status, pref, R, sid):
         R.append(_cw(sid, i, px))
 
 
-# ── Закрытые с долгом (контрагенты с завершёнными заказами и нашим долгом) ──
-def up_closed_clients(ws, clients, R, sid):
-    # Только клиенты с реальными закрытыми заказами покупателя и положительным балансом.
-    # Поставщики/подрядчики/наши юрлица исключены на этапе сбора данных (01_fetch_data.py).
-    closed = {}
-    for k, v in clients.items():
-        co = v.get('closed_orders', [])
-        if co and v.get('balance', 0) > 0:
-            closed[k] = v
-
-    H = ['Клиент', 'Код', 'Тел.', 'Тип', 'Баланс МС, ₽',
-         'Закр. заказов', 'Заказы (закрытые)', 'Статусы']
-    rows = [H]
-    for info in sorted(closed.values(), key=lambda x: -x.get('balance', 0)):
-        co = info.get('closed_orders', [])
-        names = ', '.join(o.get('name', '') for o in co[:5])
-        if len(co) > 5:
-            names += f' (+{len(co) - 5})'
-        states = ', '.join(sorted(set(o.get('state', '') for o in co))) if co else ''
-        rows.append([
-            info.get('name', ''), info.get('code', ''), info.get('phone', ''),
-            'Юр. лицо' if info.get('companyType') == 'legal' else 'Физ. лицо',
-            round(info.get('balance', 0), 2),
-            len(co), names, states])
-    _full_reset(sid, R)
-    _write(ws, rows)
-    n = len(closed)
-    R.append(_hdr(sid, len(H)))
-    if n:
-        R.append(_rpt(sid, 1, 4, n, 1, nf=RUB, bold=True))
-        R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
-        R.append(_borders(sid, 0, 0, n + 1, len(H)))
-    R.append(_frz(sid))
-    R.append(_auto_resize(sid, len(H)))
-    for i, px in enumerate([260, 80, 130, 80, 140, 90, 280, 200]):
-        R.append(_cw(sid, i, px))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -669,9 +593,6 @@ if __name__ == '__main__':
         ('Детализация',       lambda: up_detail(sm['Детализация'], results, 'Активный',
                                                  product_ref, R,
                                                  sm['Детализация'].id)),
-        ('Закрытые с долгом', lambda: up_closed_clients(sm['Закрытые с долгом'],
-                                                        clients, R,
-                                                        sm['Закрытые с долгом'].id)),
     ]
 
     for name, fn in steps:
@@ -693,8 +614,7 @@ if __name__ == '__main__':
         except Exception:
             pass
 
-    ac = sum(1 for v in clients.values() if v.get('status') == 'Активный')
     ar = sum(1 for r in results if r.get('status') == 'Активный')
     print(f'\n✅ ГОТОВО')
     print(f'   https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}')
-    print(f'   Клиентов: {ac} активных | Позиций: {ar} активных')
+    print(f'   Клиентов: {len(clients)} | Активных позиций: {ar}')
