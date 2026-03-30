@@ -24,6 +24,8 @@ WORKERS = 10
 
 EXCLUDE_NAMES = ['микроклиматика', 'ип гончаров', 'гончаров м', 'бризекс']
 TEST_KW = ['тест', 'test', 'ананас', 'четвёртый', 'четвертый', 'ромашка']
+# Теги контрагентов в МойСклад — исключаем поставщиков и подрядчиков
+EXCLUDE_TAGS = ['поставщик', 'подрядчик', 'supplier', 'contractor', 'vendor']
 
 BREEZER_KW = ['airnanny', 'tion ', 'tion4s', 'бризер', 'fanmaster', 'ballu',
               'royal clima', 'турков', 'turkov', 'живой воздух', 'приточная',
@@ -31,9 +33,9 @@ BREEZER_KW = ['airnanny', 'tion ', 'tion4s', 'бризер', 'fanmaster', 'ballu
 NOT_BREEZER_KW = ['фильтр', 'filter', 'картридж', 'cartridge', 'запасн',
                   'запчасть', 'part', 'сменн', 'к бризеру', 'для бризера',
                   'аксессуар', 'пульт', 'трубк', 'крепеж', 'монтаж',
-                  'бачок', 'подшипник', 'предохранитель', 'адаптер питания',
+                  'бачок', 'подшипник', 'предохранител', 'адаптер питания',
                   'плата управления', 'плата питания', 'плата wifi',
-                  'управляющая плата', 'материнская плата']
+                  'управляющая плата', 'материнская плата', 'зарядн']
 SPLIT_KW = ['сплит', 'кондиционер', 'split', 'conditioner', 'inverter', 'инвертор']
 
 MFR_MAP = {
@@ -123,6 +125,10 @@ def fetch_counterparties():
         if any(e in nl for e in EXCLUDE_NAMES):
             continue
         if any(t in nl for t in TEST_KW):
+            continue
+        # Исключаем поставщиков и подрядчиков по тегам (категориям) в МойСклад
+        tags = [t.lower() for t in cp.get('tags', [])]
+        if any(excl in tag for excl in EXCLUDE_TAGS for tag in tags):
             continue
         aid = cp.get('id', '')
         if not aid:
