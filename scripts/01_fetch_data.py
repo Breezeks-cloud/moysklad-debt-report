@@ -342,6 +342,51 @@ def aggregate_clients(results, clients):
     )
     return dict(active)
 
+# ── Фаза 5: остатки заготовок AIRNANNY на складе ───────────────────────────────
+# Ключевое слово для поиска заготовок в номенклатуре МойСклад
+STOCK_CTM_KW = ['заготовка airnanny']  # покрывает «Заготовка AirNanny A7» и «Заготовка AirNanny A7 Start»
+
+def fetch_stock_ctm():
+    """Запрашивает остатки всех позиций из /report/stock/all,
+    фильтрует заготовки AIRNANNY по ключевым словам в названии.
+    Возвращает суммарное количество свободных заготовок и детальный список.
+    """
+    print('Phase 5: fetching AIRNANNY stock (заготовки)...')
+    items = []
+    offset = 0
+    while True:
+        params = {'limit': LIMIT, 'offset': offset, 'groupBy': 'product'}
+        data = api_get(f'{BASE}/report/stock/all?{urlencode(params)}')
+        rows = data.get('rows', [])
+        if not rows:
+            break
+        for row in rows:
+            name = row.get('name', '')
+            nl = name.lower()
+            if any(kw in nl for kw in STOCK_CTM_KW):
+                stock_raw = row.get('stock', 0) or 0       # всего на складе
+                reserve_raw = row.get('reserve', 0) or 0   # в резерве
+                in_transit_raw = row.get('inTransit', 0) or 0  # в пути
+                free_raw = max(0.0, stock_raw - reserve_raw)
+                items.append({
+                    'name': name,
+                    'stock': stock_raw,
+                    'reserve': reserve_raw,
+                    'in_transit': in_transit_raw,
+                    'free': free_raw,
+                })
+        meta = data.get('meta', {})
+        if offset + LIMIT >= meta.get('size', len(rows)):
+            break
+        offset += LIMIT
+        time.sleep(0.2)
+
+    total_stock = sum(i['stock'] for i in items)
+    total_free = sum(i['free'] for i in items)
+    print(f'  AIRNANNY stock items: {len(items)}, total: {total_stock}, free: {total_free}')
+    return {'items': items, 'total_stock': total_stock, 'total_free': total_free}
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print(f'=== МойСклад API → Data Fetch  [{datetime.now().strftime("%Y-%m-%d %H:%M")}] ===')
@@ -350,11 +395,13 @@ if __name__ == '__main__':
     candidates = scan_orders(clients)
     results, product_ref, clients = fetch_order_details(candidates, clients)
     clients = aggregate_clients(results, clients)
+    stock_ctm = fetch_stock_ctm()
 
     data = {
         'clients': clients,
         'results': results,
         'product_ref': product_ref,
+        'stock_ctm': stock_ctm,
         'generated_at': datetime.now().isoformat(),
     }
     with open(CACHE_PATH, 'wb') as f:
@@ -364,3 +411,4 @@ if __name__ == '__main__':
     print(f'   Clients: {len(clients)} active')
     print(f'   Positions: {len(results)}')
     print(f'   Products: {len(product_ref)}')
+    print(f'   CTM stock (заготовки): {stock_ctm["total_stock"]} шт (свободно: {stock_ctm["total_free"]})')
