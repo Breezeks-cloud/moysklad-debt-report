@@ -52,6 +52,52 @@ RUB = {'type': 'NUMBER', 'pattern': '#,##0.00 "₽"'}
 QTY = {'type': 'NUMBER', 'pattern': '#,##0'}
 PCT = {'type': 'NUMBER', 'pattern': '0.0%'}
 
+# ── Фильтры позиций ───────────────────────────────────────────────────────────
+# Запчасти/сервисные позиции — исключаются из вкладки «Бризеры»
+_BREEZER_SERVICE_KW = [
+    'бачок', 'подшипник', 'предохранитель', 'адаптер питания',
+    'плата управления', 'плата питания', 'плата wifi', 'управляющая плата',
+    'материнская плата', 'плата ', 'платы ', 'кабель питания', 'сетевой кабель',
+    'вилка', 'разъём', 'разъем',
+]
+
+# Нетоварные позиции — полностью исключаются из всех расчётов отчёта
+_EXCLUDE_MISC_KW = [
+    'доплата', 'окраска бризера', 'окраска', 'платный ремонт atmeex',
+    'ремонт atmeex', 'платный ремонт',
+]
+
+
+def _is_breezer_service(name: str) -> bool:
+    """True, если позиция — запчасть/сервисный компонент Бризера (не сам аппарат)."""
+    nl = name.lower()
+    return any(kw in nl for kw in _BREEZER_SERVICE_KW)
+
+
+def _is_excluded_misc(name: str) -> bool:
+    """True, если позицию нужно полностью исключить из отчёта."""
+    nl = name.lower()
+    return any(kw in nl for kw in _EXCLUDE_MISC_KW)
+
+
+def _filter_results(results):
+    """Убрать нетоварные позиции (доплата, окраска, ремонт) из всех расчётов."""
+    return [r for r in results if not _is_excluded_misc(r.get('item_name', ''))]
+
+
+def get_anomaly_clients(clients):
+    """Клиенты с положительным балансом и закрытыми заказами (аномалии).
+    Та же логика, что у листа «Закрытые с долгом»."""
+    result = {}
+    for k, v in clients.items():
+        if v.get('closed_orders') and v.get('balance', 0) > 0:
+            result[k] = v
+    if not result:
+        for k, v in clients.items():
+            if v.get('status') == 'Закрытый' and v.get('balance', 0) > 0:
+                result[k] = v
+    return result
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def auth():
@@ -123,9 +169,39 @@ def _cp(name, pref):
 
 
 def _full_reset(sid, R, nrows=2000, ncols=20):
-    """Clear ALL old merges and formatting from a sheet before writing new data."""
+    """Clear ALL old merges, frozen rows and formatting before writing new data."""
     R.append(_unmerge(sid))
+    # Сброс замороженных строк/столбцов (исправляет «съехавшую» таблицу)
+    R.append({'updateSheetProperties': {
+        'properties': {'sheetId': sid,
+                       'gridProperties': {'frozenRowCount': 0, 'frozenColumnCount': 0}},
+        'fields': 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount'}})
     R.append(_rpt(sid, 0, 0, nrows, ncols, bg=W, bold=False, sz=10, fg=DK, ha='LEFT'))
+
+
+def _borders(sid, r, c, nr, nc, style='SOLID', alpha=0.7):
+    """Добавить границы для диапазона ячеек."""
+    border = {
+        'style': style,
+        'colorStyle': {'rgbColor': {'red': 0.6, 'green': 0.6, 'blue': 0.6, 'alpha': alpha}},
+    }
+    thin = {
+        'style': 'SOLID',
+        'colorStyle': {'rgbColor': {'red': 0.75, 'green': 0.75, 'blue': 0.75, 'alpha': 0.5}},
+    }
+    return {'updateBorders': {
+        'range': {'sheetId': sid, 'startRowIndex': r, 'endRowIndex': r + nr,
+                  'startColumnIndex': c, 'endColumnIndex': c + nc},
+        'top': border, 'bottom': border, 'left': border, 'right': border,
+        'innerHorizontal': thin, 'innerVertical': thin,
+    }}
+
+
+def _auto_resize(sid, ncols):
+    """Автоподбор ширины столбцов по содержимому."""
+    return {'autoResizeDimensions': {
+        'dimensions': {'sheetId': sid, 'dimension': 'COLUMNS',
+                       'startIndex': 0, 'endIndex': ncols}}}
 
 
 def _write(ws, rows):
@@ -151,7 +227,9 @@ def up_positions(ws, results, R, sid):
     if n:
         R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
         R.append(_rpt(sid, 1, 6, n, 1, nf=RUB))
+        R.append(_borders(sid, 0, 0, n + 1, len(H)))
     R.append(_frz(sid))
+    R.append(_auto_resize(sid, len(H)))
     for i, px in enumerate([220, 90, 130, 130, 320, 70, 130, 150, 90]):
         R.append(_cw(sid, i, px))
 
@@ -176,7 +254,9 @@ def up_clients_raw(ws, clients, R, sid):
         R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 5, n, 1, nf=RUB, bold=True))
         R.append(_rpt(sid, 1, 7, n, 1, ha='CENTER', nf=QTY))
+        R.append(_borders(sid, 0, 0, n + 1, len(H)))
     R.append(_frz(sid))
+    R.append(_auto_resize(sid, len(H)))
     for i, px in enumerate([240, 80, 140, 80, 110, 110, 300, 80, 80]):
         R.append(_cw(sid, i, px))
 
@@ -198,7 +278,9 @@ def up_spravochnik(ws, pref, R, sid):
         R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 5, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 6, n, 1, nf=RUB, bold=True))
+        R.append(_borders(sid, 0, 0, n + 1, len(H)))
     R.append(_frz(sid))
+    R.append(_auto_resize(sid, len(H)))
     for i, px in enumerate([360, 140, 110, 140, 110, 110, 130]):
         R.append(_cw(sid, i, px))
 
@@ -207,9 +289,12 @@ def up_spravochnik(ws, pref, R, sid):
 def up_summary(ws, clients, results, pref, gen_at, R, sid):
     today = gen_at[:10]
     act = {k: v for k, v in clients.items() if v.get('status') == 'Активный'}
-    clo = {k: v for k, v in clients.items() if v.get('status') == 'Закрытый'}
+    # Аномалии — клиенты с closed_orders и balance > 0 (та же логика, что «Закрытые с долгом»)
+    clo = get_anomaly_clients(clients)
     a_pos = [r for r in results if r.get('status') == 'Активный']
-    c_pos = [r for r in results if r.get('status') == 'Закрытый']
+    # Позиции аномальных клиентов (по client_id)
+    anom_ids = set(clo.keys())
+    c_pos = [r for r in results if r.get('client_id', '') in anom_ids]
 
     total_debt = sum(v.get('debt', 0) for v in act.values())
     cats = ['Бризер', 'Сплит/Кондиционер', 'Прочее', 'Услуга']
@@ -225,7 +310,8 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
     total_cost = sum(cc.get(c, 0) for c in ['Бризер', 'Сплит/Кондиционер', 'Прочее'])
     total_qty = sum(r.get('qty', 0) for r in a_pos)
 
-    c_debt = sum(v.get('debt', 0) for v in clo.values())
+    # Аномалии: считаем баланс (фактически переплачено), а не долг по позициям
+    c_debt = sum(v.get('balance', 0) for v in clo.values())
     c_qty = sum(r.get('qty', 0) for r in c_pos)
     c_cost = sum(r.get('qty', 0) * _cp(r.get('item_name', ''), pref)
                  for r in c_pos if r.get('category') != 'Услуга')
@@ -346,6 +432,7 @@ def up_summary(ws, clients, results, pref, gen_at, R, sid):
         R.append(_rpt(sid, r, 6, 1, 1, bg=bg, nf=RUB))
 
     R.append(_frz(sid, 1))
+    R.append(_auto_resize(sid, 8))
     for i, px in enumerate([300, 80, 160, 100, 150, 100, 80, 80]):
         R.append(_cw(sid, i, px))
 
@@ -356,7 +443,8 @@ def up_breezers(ws, results, pref, R, sid):
          'Долг, ₽', 'Себестоимость, ₽']
 
     active_b = [r for r in results
-                if r.get('category') == 'Бризер' and r.get('status') == 'Активный']
+                if r.get('category') == 'Бризер' and r.get('status') == 'Активный'
+                and not _is_breezer_service(r.get('item_name', ''))]
     by_mfr = defaultdict(lambda: defaultdict(list))
     for r in active_b:
         by_mfr[r.get('mfr') or 'Прочее'][r.get('model') or r.get('item_name', '')].append(r)
@@ -423,7 +511,9 @@ def up_breezers(ws, results, pref, R, sid):
                   ha='CENTER', nf=QTY))
     R.append(_rpt(sid, total_ri, 2, 1, 2, bg=C['total'], bold=True, sz=12, nf=RUB))
 
+    R.append(_borders(sid, 0, 0, total_ri + 1, 4))
     R.append(_frz(sid, 1))
+    R.append(_auto_resize(sid, 4))
     for i, px in enumerate([400, 100, 150, 170]):
         R.append(_cw(sid, i, px))
 
@@ -453,7 +543,9 @@ def up_all_products(ws, results, pref, R, sid):
         R.append(_rpt(sid, 1, 2, n, 1, ha='CENTER', nf=QTY))
         R.append(_rpt(sid, 1, 3, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 4, n, 1, nf=RUB))
+        R.append(_borders(sid, 0, 0, n + 1, 5))
     R.append(_frz(sid, 1))
+    R.append(_auto_resize(sid, 5))
     for i, px in enumerate([380, 160, 90, 140, 150]):
         R.append(_cw(sid, i, px))
 
@@ -480,7 +572,9 @@ def up_detail(ws, results, status, pref, R, sid):
         R.append(_rpt(sid, 1, 6, n, 1, ha='CENTER', nf=QTY))
         R.append(_rpt(sid, 1, 7, n, 1, nf=RUB))
         R.append(_rpt(sid, 1, 8, n, 1, nf=RUB))
+        R.append(_borders(sid, 0, 0, n + 1, len(H)))
     R.append(_frz(sid, 1))
+    R.append(_auto_resize(sid, len(H)))
     for i, px in enumerate([220, 80, 130, 130, 320, 150, 70, 130, 140]):
         R.append(_cw(sid, i, px))
 
@@ -518,7 +612,9 @@ def up_closed_clients(ws, clients, R, sid):
     if n:
         R.append(_rpt(sid, 1, 4, n, 1, nf=RUB, bold=True))
         R.append(_rpt(sid, 1, 5, n, 1, ha='CENTER', nf=QTY))
+        R.append(_borders(sid, 0, 0, n + 1, len(H)))
     R.append(_frz(sid))
+    R.append(_auto_resize(sid, len(H)))
     for i, px in enumerate([260, 80, 130, 80, 140, 90, 280, 200]):
         R.append(_cw(sid, i, px))
 
@@ -545,7 +641,7 @@ if __name__ == '__main__':
         data = pickle.load(f)
 
     clients     = data['clients']
-    results     = data['results']
+    results     = _filter_results(data['results'])  # убрать доплаты/окраски/ремонты
     product_ref = data.get('product_ref', {})
     gen_at      = data.get('generated_at', datetime.now().isoformat())
 
