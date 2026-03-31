@@ -539,9 +539,9 @@ def up_detail(ws, results, status, pref, R, sid):
 
 # ── Обеспеченность CTM ────────────────────────────────────────────────────────
 def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
-    """Лист «Обеспеченность CTM»:
-    Блок 1 — сводка: должны устройств, заготовок на складе, % обеспеченности, дефицит.
-    Блок 2 — разбивка задолженности по конфигурациям AIRNANNY.
+    """Лист «Обеспеченность CTM».
+    Макет: колонка A — узкий отступ (20px), колонка B — метки/конфигурации,
+    колонка C — значения/кол-во, D — долг, E — себестоимость.
     """
     today = gen_at[:10]
 
@@ -560,12 +560,10 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
 
     # --- данные по заготовкам ---
     stock_total = stock_ctm.get('total_stock', 0) if stock_ctm else 0
-    stock_free = stock_ctm.get('total_free', 0) if stock_ctm else 0
+    stock_free  = stock_ctm.get('total_free', 0)  if stock_ctm else 0
 
-    # обеспеченность считаем по общему количеству заготовок (не только свободных),
-    # т.к. заготовки в резерве тоже могут быть переброшены на нужды задолженности
-    coverage_pct = (stock_total / total_debt_qty) if total_debt_qty > 0 else 0
-    coverage_pct = min(coverage_pct, 1.0)  # не больше 100%
+    # обеспеченность по общему кол-ву заготовок (резервные тоже можно перебросить)
+    coverage_pct = min((stock_total / total_debt_qty) if total_debt_qty > 0 else 0, 1.0)
     deficit = max(0, total_debt_qty - stock_total)
     surplus = max(0, stock_total - total_debt_qty)
 
@@ -579,31 +577,32 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
         cfgs[n]['cost'] += r.get('qty', 0) * _cp(n, pref)
     cfgs_sorted = sorted(cfgs.items(), key=lambda x: -x[1]['qty'])
 
-    # --- строки листа ---
+    # ── Строки листа ─────────────────────────────────────────────────────────
+    # Макет: [A(пусто), B(метка/назв.), C(значение/кол-во), D(долг), E(себест.)]
     rows = []
-    rows.append([f'Обеспеченность задолженности CTM (AIRNANNY)  |  {today}',
-                 '', '', '', ''])                                                     # 0
-    rows.append(['Только собственные бризеры (CTM). Детали для сборки — в наличии.',
-                 '', '', '', ''])                                                     # 1
-    rows.append([''])                                                                 # 2
+    rows.append(['', f'Обеспеченность задолженности CTM (AIRNANNY)  |  {today}',
+                 '', '', ''])                                                          # 0
+    rows.append(['', 'Только собственные бризеры (CTM). Детали для сборки — в наличии.',
+                 '', '', ''])                                                          # 1
+    rows.append(['', '', '', '', ''])                                                  # 2
 
-    rows.append(['СВОДКА', '', '', '', ''])                                           # 3
-    rows.append(['Должны устройств CTM (AIRNANNY), шт', '', total_debt_qty, '', '']) # 4
-    rows.append(['Заготовок AIRNANNY A7 на складе, шт', '', stock_total, '', ''])    # 5
-    rows.append(['  в т.ч. свободных (не в резерве), шт', '', stock_free, '', ''])  # 6
-    rows.append(['Обеспеченность', '', coverage_pct, '', ''])                        # 7
+    rows.append(['', 'СВОДКА', '', '', ''])                                           # 3
+    rows.append(['', 'Должны устройств CTM (AIRNANNY), шт', total_debt_qty, '', '']) # 4
+    rows.append(['', 'Заготовок AIRNANNY A7 на складе, шт', stock_total,    '', '']) # 5
+    rows.append(['', '  в т.ч. свободных (не в резерве), шт', stock_free,   '', '']) # 6
+    rows.append(['', 'Обеспеченность', coverage_pct, '', ''])                        # 7
     if deficit > 0:
-        rows.append(['Дефицит, шт', '', -deficit, '', ''])                           # 8 дефицит
+        rows.append(['', 'Дефицит, шт', -deficit, '', ''])                           # 8
     else:
-        rows.append(['Профицит, шт', '', surplus, '', ''])                           # 8 профицит
-    rows.append(['Долг клиентам (CTM), руб', '', round(total_debt_rub, 2), '', '']) # 9
-    rows.append(['Себестоимость резерва CTM, руб', '', round(total_debt_cost, 2),
-                 '', ''])                                                             # 10
-    rows.append([''])                                                                 # 11
+        rows.append(['', 'Профицит, шт', surplus, '', ''])                           # 8
+    rows.append(['', 'Долг клиентам (CTM), руб', round(total_debt_rub, 2),  '', '']) # 9
+    rows.append(['', 'Себестоимость резерва CTM, руб',
+                 round(total_debt_cost, 2), '', ''])                                  # 10
+    rows.append(['', '', '', '', ''])                                                  # 11
 
-    rows.append(['ЗАДОЛЖЕННОСТЬ ПО КОНФИГУРАЦИЯМ', '', '', '', ''])                  # 12
-    H2 = ['', 'Конфигурация', 'Кол-во должны, шт', 'Долг, ₽', 'Себестоимость, ₽']
-    rows.append(H2)                                                                   # 13
+    rows.append(['', 'ЗАДОЛЖЕННОСТЬ ПО КОНФИГУРАЦИЯМ', '', '', ''])                   # 12
+    rows.append(['', 'Конфигурация', 'Кол-во должны, шт', 'Долг, ₽',
+                 'Себестоимость, ₽'])                                                  # 13
     cfg_start = len(rows)
     for cfg, t in cfgs_sorted:
         rows.append(['', cfg, t['qty'], round(t['debt'], 2), round(t['cost'], 2)])
@@ -611,7 +610,7 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
     rows.append(['', 'ИТОГО', total_debt_qty,
                  round(total_debt_rub, 2), round(total_debt_cost, 2)])
 
-    # --- запись ---
+    # ── Запись данных ────────────────────────────────────────────────────────
     _full_reset(sid, R)
     _write(ws, rows)
 
@@ -619,39 +618,44 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
     RED = {'red': 0.8,   'green': 0.1,   'blue': 0.1}
     GRN = {'red': 0.1,   'green': 0.5,   'blue': 0.1}
 
-    # заголовок
+    # ── Форматирование заголовка (строки 0–2) ────────────────────────────────
     R.append(_merge(sid, 0, 0, 1, 5))
     R.append(_rpt(sid, 0, 0, 1, 5, bg=C['hdr'], bold=True, sz=14, fg=W, ha='CENTER'))
-    R.append(_rpt(sid, 1, 0, 1, 5, bg=C['blue']))
+    R.append(_rpt(sid, 1, 0, 1, 5, bg=C['blue'], wrap=True))
     R.append(_rpt(sid, 2, 0, 1, 5, bg=W))
 
-    # блок «Сводка»
+    # ── Блок «Сводка» (строки 3–10) ─────────────────────────────────────────
     R.append(_merge(sid, 3, 0, 4, 5))
     R.append(_rpt(sid, 3, 0, 1, 5, bg=C['blue'], bold=True, sz=12, fg=TB))
 
-    summary_rows = [(4, total_debt_qty, C['grey'], QTY),
-                    (5, stock_total,     W,         QTY),
-                    (6, stock_free,      C['grey'], QTY),
-                    (7, coverage_pct,    W if coverage_pct >= 1.0 else C['orange'] if coverage_pct >= 0.5 else C['warn'], PCT),
-                    (8, None, C['warn'] if deficit > 0 else C['green'], QTY),
-                    (9, None,  C['grey'], RUB),
-                    (10, None, W,         RUB)]
-    for i, (ri, _, bg, fmt) in enumerate(summary_rows):
-        R.append(_rpt(sid, ri, 0, 1, 2, bg=bg))
+    # фоны и форматы числовых ячеек для строк сводки
+    summary_fmt = [
+        (4, C['grey'],                                                                QTY),
+        (5, W,                                                                        QTY),
+        (6, C['grey'],                                                                QTY),
+        (7, C['green'] if coverage_pct >= 1.0 else (
+            C['orange'] if coverage_pct >= 0.5 else C['warn']),                       PCT),
+        (8, C['warn'] if deficit > 0 else C['green'],                                QTY),
+        (9, C['grey'],                                                                RUB),
+        (10, W,                                                                       RUB),
+    ]
+    for ri, bg, fmt in summary_fmt:
+        R.append(_rpt(sid, ri, 1, 1, 1, bg=bg, wrap=True))   # метка в B — с переносом
         R.append(_rpt(sid, ri, 2, 1, 1, bg=bg, bold=True, ha='CENTER', nf=fmt))
 
-    # цвет строки обеспеченности в зависимости от значения
-    cov_bg = C['green'] if coverage_pct >= 1.0 else (C['orange'] if coverage_pct >= 0.5 else C['warn'])
-    R.append(_rpt(sid, 7, 0, 1, 3, bg=cov_bg, bold=True))
+    # строка обеспеченности — жирный текст + цветовая индикация
+    cov_bg = C['green'] if coverage_pct >= 1.0 else (
+        C['orange'] if coverage_pct >= 0.5 else C['warn'])
+    R.append(_rpt(sid, 7, 1, 1, 1, bg=cov_bg, bold=True))
     R.append(_rpt(sid, 7, 2, 1, 1, bg=cov_bg, bold=True, ha='CENTER', nf=PCT))
 
-    # цвет строки дефицит/профицит
+    # строка дефицит/профицит — цветной текст
     dp_bg = C['warn'] if deficit > 0 else C['green']
     dp_fg = RED if deficit > 0 else GRN
-    R.append(_rpt(sid, 8, 0, 1, 3, bg=dp_bg, bold=True, fg=dp_fg))
+    R.append(_rpt(sid, 8, 1, 1, 1, bg=dp_bg, bold=True, fg=dp_fg))
     R.append(_rpt(sid, 8, 2, 1, 1, bg=dp_bg, bold=True, ha='CENTER', fg=dp_fg, nf=QTY))
 
-    # блок «Конфигурации»
+    # ── Блок «Конфигурации» (строки 12+) ────────────────────────────────────
     R.append(_merge(sid, 12, 0, 13, 5))
     R.append(_rpt(sid, 12, 0, 1, 5, bg=C['blue'], bold=True, sz=12, fg=C['hdr']))
     R.append(_rpt(sid, 13, 0, 1, 5, bg=C['hdr'], bold=True, fg=W, ha='CENTER'))
@@ -659,7 +663,7 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
     for i in range(len(cfgs_sorted)):
         ri = cfg_start + i
         bg = C['grey'] if i % 2 == 0 else W
-        R.append(_rpt(sid, ri, 1, 1, 1, bg=bg))
+        R.append(_rpt(sid, ri, 1, 1, 1, bg=bg, wrap=True))   # название — с переносом
         R.append(_rpt(sid, ri, 2, 1, 1, bg=bg, ha='CENTER', nf=QTY))
         R.append(_rpt(sid, ri, 3, 1, 2, bg=bg, nf=RUB))
 
@@ -667,12 +671,14 @@ def up_coverage_ctm(ws, results, stock_ctm, pref, gen_at, R, sid):
     R.append(_rpt(sid, total_ri, 2, 1, 1, bg=C['total'], bold=True, ha='CENTER', nf=QTY))
     R.append(_rpt(sid, total_ri, 3, 1, 2, bg=C['total'], bold=True, nf=RUB))
 
-    R.append(_borders(sid, 3, 0, 8, 3))                        # сводка
-    R.append(_borders(sid, 13, 0, len(cfgs_sorted) + 2, 5))    # конфигурации
+    # ── Границы ──────────────────────────────────────────────────────────────
+    R.append(_borders(sid, 3, 1, 8, 2))                              # сводка (B:C)
+    R.append(_borders(sid, 13, 1, len(cfgs_sorted) + 2, 4))          # конфигурации (B:E)
 
+    # ── Размеры колонок ──────────────────────────────────────────────────────
+    # A — узкий отступ, B — метки (широкие), C — кол-во, D/E — деньги
     R.append(_frz(sid, 1))
-    R.append(_auto_resize(sid, 5))
-    for i, px in enumerate([20, 380, 160, 150, 160]):
+    for i, px in enumerate([20, 340, 160, 150, 160]):
         R.append(_cw(sid, i, px))
 
 
